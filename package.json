@@ -1,7 +1,8 @@
 {
-  "name": "nftproject",
+  "name": "NFTproject",
   "version": "1.0.0",
   "main": "truffle-config.js",
+  "type": "module",
   "directories": {
     "test": "test"
   },
@@ -12,6 +13,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@openzeppelin/contracts": "^4.9.3"
+    "@openzeppelin/contracts": "^4.9.3",
+    "ethers": "^6.13.5",
+    "web3": "^1.8.2"
   }
 }
