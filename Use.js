@@ -80,7 +80,7 @@ const getEventForToken = async (tokenId) => {
 const deleteEvent = async () => {
     try {
       // Use .send() instead of .call() to modify state
-      const receipt = await contract.methods.deleteEvent(2)
+      const receipt = await contract.methods.deleteEvent(11)
         .send({
           from: '0x63b7acCBeE71A6a026A0BdC3a0734D74384eD15C',
           gas: 3000000
@@ -117,7 +117,7 @@ const showListedTickets = async () => {
 // mintTicket();
 // getOwnedTickets();
 //  listTicket()
-// deleteEvent()
+deleteEvent()
 // showListedTickets();
 //  buyTicket()
 // showEvents();

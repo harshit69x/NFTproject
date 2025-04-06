@@ -25,6 +25,7 @@ type Event = {
   active: boolean;
   organizer: string;
   eventURI: string;
+  image: string; // Added image field
 };
 
 export function EventsSection() {
@@ -62,21 +63,52 @@ export function EventsSection() {
 
       // Fetch events from the smart contract
       const eventsData = await instance.methods.showEvents().call({
-        from: "0x6fF6e707315611EA7d64Aaa362b8887af7316317", // Replace with the correct address
+        from: account || "0x6fF6e707315611EA7d64Aaa362b8887af7316317",
       });
 
+      // Filter out inactive or empty events (those with empty name or address(0) organizer)
+      const validEvents = eventsData.filter((event: any) => 
+        event.active && 
+        event.name !== '' && 
+        event.organizer !== '0x0000000000000000000000000000000000000000'
+      );
+
       // Transform the data into the Event type
-      const formattedEvents = eventsData.map((event: any, index: number) => ({
-        id: index + 1, // Assign a unique ID
-        name: event.name,
-        originalPrice: Web3.utils.fromWei(event.originalPrice, "ether"), // Convert price from Wei to Ether
-        maxResalePrice: Web3.utils.fromWei(event.maxResalePrice, "ether"), // Convert max resale price from Wei to Ether
-        royaltyPercentage: parseInt(event.royaltyPercentage, 10),
-        active: event.active,
-        organizer: event.organizer,
-        eventURI: event.eventURI,
+      const formattedEvents = await Promise.all(validEvents.map(async (event: any) => {
+        let image = "/placeholder.svg?height=400&width=600";
+        try {
+          const response = await fetch(event.eventURI);
+          if (response.ok) {
+            try {
+              const data = await response.json();
+              if (data.image) {
+                // Sanitize the image URL by trimming and removing newline characters
+                image = data.image.trim().replace(/\n/g, "");
+              }
+            } catch (jsonError) {
+              console.error(`Error parsing JSON for event ${event.name}:`, jsonError);
+            }
+          } else {
+            console.warn(`Invalid response for eventURI: ${event.eventURI}`);
+          }
+        } catch (error) {
+          console.error(`Error fetching eventURI for event ${event.name}:`, error);
+        }
+
+        return {
+          id: parseInt(event.eventId), // Use the eventId from contract
+          name: event.name,
+          originalPrice: Web3.utils.fromWei(event.originalPrice, "ether"),
+          maxResalePrice: Web3.utils.fromWei(event.maxResalePrice, "ether"),
+          royaltyPercentage: parseInt(event.royaltyPercentage, 10),
+          active: event.active,
+          organizer: event.organizer,
+          eventURI: event.eventURI,
+          image, // Assign the sanitized or fallback image
+        };
       }));
 
+      console.log("Fetched events:", formattedEvents);
       setEvents(formattedEvents);
     } catch (error) {
       console.error("Error fetching events:", error);
@@ -152,40 +184,30 @@ export function EventsSection() {
   };
 
   const handleMintTicket = async (eventId: number, price: string) => {
-    if (!contract || !account) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
-      const priceInWei = web3.utils.toWei(price, "ether");
-      const tx = await contract.methods.mintTicket(eventId).send({
-        from: account,
-        value: priceInWei,
-      });
-
-      toast({
-        title: "Minting ticket",
-        description: "Please wait while your transaction is being processed",
-      });
-
-      await tx;
-
-      toast({
-        title: "Success",
-        description: "Ticket minted successfully!",
-      });
+      const instance = await getContractInstance();
+      // Convert price to Wei
+      const priceInWei = Web3.utils.toWei(price, "ether");
+      
+      // Mint the ticket
+      const receipt = await instance.methods.mintTicket(eventId)
+        .send({
+          from: account,
+          value: priceInWei, 
+          gas: 3000000
+        });
+        
+      console.log("Mint transaction receipt:", receipt);
+      // Check for events in the receipt
+      if (receipt.events && receipt.events.TicketMinted) {
+        console.log("TicketMinted event found:", receipt.events.TicketMinted);
+      } else {
+        console.warn("No TicketMinted event found in receipt");
+      }
+      return receipt;
     } catch (error) {
       console.error("Error minting ticket:", error);
-      toast({
-        title: "Error",
-        description: "Failed to mint ticket. Please try again.",
-        variant: "destructive",
-      });
+      throw error;
     }
   };
 
@@ -231,7 +253,6 @@ export function EventsSection() {
     <section id="events" className="py-24 bg-black relative overflow-hidden">
       <div className="absolute inset-0 bg-grid pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-b from-purple-900/10 via-black/50 to-black pointer-events-none" />
-
       <div className="container px-4 md:px-6 relative z-10">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12">
           <motion.div
@@ -248,17 +269,23 @@ export function EventsSection() {
               and easy transfers.
             </p>
           </motion.div>
-
           {isConnected && (
-            <Link href="/host-event" passHref>
-              <Button className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white">
-                <CalendarPlus className="mr-2 h-4 w-4" />
-                Host an Event
-              </Button>
-            </Link>
+            <div className="flex space-x-3">
+              <Link href="/my-tickets" passHref>
+                <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
+                  <Ticket className="mr-2 h-4 w-4" />
+                  My Tickets
+                </Button>
+              </Link>
+              <Link href="/host-event" passHref>
+                <Button variant="outline" className="border-green-500/20 hover:bg-green-500/10">
+                  <CalendarPlus className="mr-2 h-4 w-4" />
+                  Host an Event
+                </Button>
+              </Link>
+            </div>
           )}
         </div>
-
         <div ref={ref} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading
             ? Array(3)
@@ -285,7 +312,7 @@ export function EventsSection() {
                     <Card className="overflow-hidden bg-zinc-900/50 border border-purple-500/10 backdrop-blur-sm hover:border-purple-500/30 transition-all duration-300 group">
                       <div className="relative h-48 overflow-hidden">
                         <img
-                          src={`/placeholder.svg?height=400&width=600&text=${encodeURIComponent(event.name)}`}
+                          src={event.image}
                           alt={event.name}
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                         />
@@ -392,6 +419,7 @@ export function EventsSection() {
                               active: true,
                               organizer: "0x1234...5678",
                               eventURI: "",
+                              image: event.image,
                             })
                           }
                           disabled={!isConnected}

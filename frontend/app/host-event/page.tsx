@@ -52,31 +52,51 @@ export default function HostEventPage() {
       const priceInWei = Web3.utils.toWei(formData.price, "ether");
       const maxResalePriceInWei = Web3.utils.toWei(formData.maxResalePrice, "ether");
 
-      // Call the createEvent method
-      const gasEstimate = await instance.methods
-        .createEvent(formData.name, priceInWei, maxResalePriceInWei, formData.royaltyPercentage, formData.eventURI || "")
-        .estimateGas({ from: account });
-
-      const tx = await instance.methods
-        .createEvent(formData.name, priceInWei, maxResalePriceInWei, formData.royaltyPercentage, formData.eventURI || "")
-        .send({
-          from: account,
-          gas: Number(gasEstimate) + 100000, // Add buffer to gas estimate
-        });
-
       toast({
         title: "Creating event",
-        description: "Please wait while your transaction is being processed",
+        description: "Please confirm the transaction in your wallet",
       });
 
-      await tx;
+      // Call the createEvent method directly without gas estimation
+      const tx = await instance.methods
+        .createEvent(
+          formData.name, 
+          priceInWei, 
+          maxResalePriceInWei, 
+          parseInt(formData.royaltyPercentage), 
+          formData.eventURI || ""
+        )
+        .send({
+          from: account,
+          gas: 3000000, // Use fixed gas limit like in your example
+        });
+
+      // Extract event data from transaction receipt
+      const eventData = tx.events.EventCreated.returnValues;
+      
+      console.log("✅ Event created:", eventData);
 
       toast({
         title: "Success",
-        description: "Event created successfully!",
+        description: `Event "${eventData.name}" created with ID: ${eventData.eventId}`,
+      });
+
+      // Show more detailed success message
+      toast({
+        title: "Event Details",
+        description: `Price: ${Web3.utils.fromWei(eventData.price, "ether")} ETH`,
       });
 
       setIsSuccess(true);
+      
+      // Reset form after successful creation
+      setFormData({
+        name: "",
+        price: "",
+        maxResalePrice: "",
+        royaltyPercentage: "10",
+        eventURI: "",
+      });
     } catch (error) {
       console.error("Error creating event:", error);
       toast({

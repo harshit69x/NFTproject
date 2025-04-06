@@ -10,7 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Ticket, Calendar, MapPin, CreditCard, Check, Loader2 } from "lucide-react"
+import { Ticket, Calendar, MapPin, CreditCard, Check, Loader2, AlertCircle } from "lucide-react"
 import { useWeb3 } from "@/components/web3-provider"
 
 type Event = {
@@ -28,7 +28,7 @@ type PurchaseTicketDialogProps = {
   event: Event
   open: boolean
   onOpenChange: (open: boolean) => void
-  onPurchase: (eventId: number, price: string) => void
+  onPurchase: (eventId: number, price: string) => Promise<any>
 }
 
 export function PurchaseTicketDialog({ event, open, onOpenChange, onPurchase }: PurchaseTicketDialogProps) {
@@ -36,18 +36,68 @@ export function PurchaseTicketDialog({ event, open, onOpenChange, onPurchase }: 
   const [step, setStep] = useState(1)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [ticketDetails, setTicketDetails] = useState<{
+    tokenId?: string;
+    eventId?: string;
+    owner?: string;
+  }>({})
 
   const handlePurchase = async () => {
-    setIsProcessing(true)
+    setIsProcessing(true);
+    setErrorMessage(null);
 
     try {
-      await onPurchase(event.id, event.originalPrice)
-      setIsProcessing(false)
-      setIsComplete(true)
-      setStep(3)
+      // Call the parent component's onPurchase function to mint the ticket
+      const result = await onPurchase(event.id, event.originalPrice);
+      
+      console.log("Purchase result:", result);
+      
+      // Safely extract ticket details from the transaction result
+      let tokenId, eventId;
+      
+      // Try to extract from different possible receipt formats
+      if (result?.events?.TicketMinted?.returnValues) {
+        // Standard web3.js format
+        tokenId = result.events.TicketMinted.returnValues.tokenId;
+        eventId = result.events.TicketMinted.returnValues.eventId;
+      } else if (result?.logs && Array.isArray(result.logs)) {
+        // Try to find the event in logs
+        console.log("Looking for event in logs:", result.logs);
+        // Logic to extract from logs if needed
+        tokenId = event.id; // Fallback
+        eventId = event.id; // Fallback
+      } else {
+        // If we can't find the event data, use fallbacks
+        console.warn("Could not find event data in receipt, using fallbacks");
+        tokenId = "N/A";
+        eventId = event.id.toString();
+      }
+      
+      setTicketDetails({
+        tokenId: tokenId?.toString() || "N/A",
+        eventId: eventId?.toString() || event.id.toString(),
+        owner: account || "Unknown"
+      });
+      
+      console.log("🎟️ Ticket minted with details:", {
+        tokenId,
+        eventId,
+        owner: account
+      });
+      
+      setIsProcessing(false);
+      setIsComplete(true);
+      setStep(3);
     } catch (error) {
-      setIsProcessing(false)
-      console.error("Purchase error:", error)
+      setIsProcessing(false);
+      console.error("Purchase error:", error);
+      
+      setErrorMessage(
+        error.message?.includes("User denied") 
+          ? "Transaction was rejected in your wallet." 
+          : "Failed to purchase ticket. Please try again."
+      );
     }
   }
 
@@ -57,6 +107,8 @@ export function PurchaseTicketDialog({ event, open, onOpenChange, onPurchase }: 
     setTimeout(() => {
       setStep(1)
       setIsComplete(false)
+      setErrorMessage(null)
+      setTicketDetails({})
     }, 300)
   }
 
@@ -71,6 +123,15 @@ export function PurchaseTicketDialog({ event, open, onOpenChange, onPurchase }: 
             {step === 3 && "Your ticket has been successfully purchased!"}
           </DialogDescription>
         </DialogHeader>
+
+        {errorMessage && (
+          <div className="bg-red-500/10 border border-red-500/50 rounded-md p-3 text-red-400 text-sm">
+            <div className="flex items-start">
+              <AlertCircle className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+              <p>{errorMessage}</p>
+            </div>
+          </div>
+        )}
 
         {step === 1 && (
           <div className="space-y-6 py-4">
@@ -181,7 +242,8 @@ export function PurchaseTicketDialog({ event, open, onOpenChange, onPurchase }: 
             <div className="bg-zinc-800 rounded-lg p-4 text-left">
               <h4 className="font-medium mb-2">Ticket Details:</h4>
               <p className="text-zinc-400">Event: {event.name}</p>
-              <p className="text-zinc-400">Price: {event.originalPrice} ETH</p>
+              <p className="text-zinc-400">Token ID: {ticketDetails.tokenId}</p>
+              <p className="text-zinc-400">Event ID: {ticketDetails.eventId}</p>
               <p className="text-zinc-400">
                 Owner: {account?.substring(0, 6)}...{account?.substring(38)}
               </p>
