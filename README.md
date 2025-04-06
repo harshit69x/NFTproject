@@ -30,7 +30,7 @@ npm install
 truffle compile
 truffle migrate --reset
 ```
-##📜 Sample IPFS Metadata
+## 📜 Sample IPFS Metadata
 ```bash
 {
   "name": "Live Concert Ticket",
@@ -56,7 +56,7 @@ TicketMinted	Emitted on minting a new ticket
 TicketListed	Emitted when a ticket is listed for resale
 TicketSold	Emitted when a ticket is successfully sold
 
-##📂 Files of Interest
+## 📂 Files of Interest
 contracts/TicketNFT.sol – main smart contract logic
 
 EventListner.js – listens and logs emitted events from the contract
