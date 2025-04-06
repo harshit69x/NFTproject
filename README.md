@@ -29,7 +29,8 @@ cd nft-ticketing-truffle
 npm install
 truffle compile
 truffle migrate --reset
-##📜 Sample IPFS Metadata**
+##📜 Sample IPFS Metadata
+```bash
 {
   "name": "Live Concert Ticket",
   "description": "VIP Pass to the Music Festival",
@@ -45,7 +46,8 @@ truffle migrate --reset
     }
   ]
 }
-**📬 Smart Contract Events**
+```
+##📬 Smart Contract Events**
 Event Name	Description
 EventCreated	Emitted when a new event is created
 EventDeleted	Emitted when an event is deleted
@@ -53,7 +55,7 @@ TicketMinted	Emitted on minting a new ticket
 TicketListed	Emitted when a ticket is listed for resale
 TicketSold	Emitted when a ticket is successfully sold
 
-**📂 Files of Interest**
+##📂 Files of Interest**
 contracts/TicketNFT.sol – main smart contract logic
 
 EventListner.js – listens and logs emitted events from the contract
