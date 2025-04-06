@@ -115,7 +115,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
       setContract(ticketContract);
 
       toast({
-        title: "Wallet connected",
+        title: "Wallet connected ",
         description: `Connected to ${formattedAddress}`,
       });
     } catch (error) {
@@ -195,7 +195,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
       {/* Display the connected wallet address */}
       {displayAddress && (
         <div className="text-xs text-gray-500 mt-1">
-          <strong>Wallet connected:</strong> {displayAddress}
+          <strong>Wallet connected: {displayAddress}</strong> 
         </div>
       )}
     </Web3Context.Provider>

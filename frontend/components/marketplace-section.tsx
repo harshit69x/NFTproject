@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { ShoppingCart, Tag, Ticket, User } from "lucide-react"
-import { ethers } from "ethers"
+import Web3 from "web3" // Change from ethers to Web3
 
 type ListedTicket = {
   id: number
@@ -23,14 +23,116 @@ type ListedTicket = {
   seller: string
 }
 
+// Export a function to properly fetch listed tickets
+const fetchListedTickets = async (contract, web3, toast) => {
+  try {
+    console.log("Fetching listed tickets...");
+    
+    if (!contract || !web3) {
+      console.log("Contract or web3 not initialized");
+      return [];
+    }
+    
+    // Get all listed ticket IDs
+    const listedTicketIds = await contract.methods.showListedTickets().call();
+    console.log("Listed ticket IDs:", listedTicketIds);
+    
+    if (!listedTicketIds || listedTicketIds.length === 0) {
+      console.log("No tickets are currently listed");
+      return [];
+    }
+
+    // Safely convert Wei to Ether
+    const safeFromWei = (weiValue) => {
+      try {
+        const valueStr = String(weiValue || '0');
+        return web3.utils.fromWei(valueStr, 'ether');
+      } catch (error) {
+        console.error('Error converting from Wei:', error);
+        return '0';
+      }
+    };
+
+    // Fetch details for each listed ticket
+    const ticketsData = await Promise.all(
+      listedTicketIds.map(async (id) => {
+        const tokenId = parseInt(id);
+        try {
+          // Get ticket data
+          const ticketData = await contract.methods.tickets(tokenId).call();
+          
+          // Skip invalid tickets
+          if (!ticketData || !ticketData.eventId) {
+            console.warn(`Invalid ticket data for ID ${tokenId}`);
+            return null;
+          }
+          
+          // Get event data
+          const eventData = await contract.methods.events(ticketData.eventId).call();
+          
+          // Skip invalid events
+          if (!eventData || !eventData.name) {
+            console.warn(`Invalid event data for event ID ${ticketData.eventId}`);
+            return null;
+          }
+          
+          // Get owners list
+          const owners = await contract.methods.getTicketOwners(tokenId).call();
+          
+          // Find the current owner who has listed the ticket
+          const currentOwner = owners.find((owner) => owner.forSale);
+          
+          if (!currentOwner) {
+            console.warn(`No listed owner found for ticket ${tokenId}`);
+            return null;
+          }
+          
+          // Return formatted ticket data
+          return {
+            id: tokenId,
+            eventId: parseInt(ticketData.eventId),
+            eventName: eventData.name,
+            price: safeFromWei(currentOwner.price),
+            seller: currentOwner.owner,
+            maxResalePrice: safeFromWei(eventData.maxResalePrice),
+            originalPrice: safeFromWei(ticketData.originalPrice),
+          };
+        } catch (error) {
+          console.error(`Error fetching data for ticket ${tokenId}:`, error);
+          return null;
+        }
+      })
+    );
+
+    // Filter out null results
+    return ticketsData.filter(ticket => ticket !== null);
+  } catch (error) {
+    console.error("Error in fetchListedTickets:", error);
+    if (toast) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch listed tickets. Please try again.",
+        variant: "destructive",
+      });
+    }
+    return [];
+  }
+};
+
 export function MarketplaceSection() {
-  const { contract, account, isConnected } = useWeb3()
+  const { contract, account, isConnected, web3 } = useWeb3()
   const [listedTickets, setListedTickets] = useState<ListedTicket[]>([])
   const [loading, setLoading] = useState(true)
   const [listDialogOpen, setListDialogOpen] = useState(false)
   const [selectedTicket, setSelectedTicket] = useState<number | null>(null)
   const [listPrice, setListPrice] = useState("")
   const { toast } = useToast()
+
+  const [selectedTicketDetails, setSelectedTicketDetails] = useState<{
+    maxResalePrice?: string;
+    originalPrice?: string;
+    eventId?: number;
+  }>({});
 
   const [ref, inView] = useInView({
     triggerOnce: false,
@@ -43,87 +145,241 @@ export function MarketplaceSection() {
     }
   }, [contract])
 
-  const fetchListedTickets = async () => {
+  const checkTicketOwnership = async (ticketId: number): Promise<boolean> => {
+    if (!contract || !account) return false;
+    
     try {
-      setLoading(true)
-      const listedTicketIds = await contract?.showListedTickets()
-
-      const ticketsData = await Promise.all(
-        listedTicketIds.map(async (id: ethers.BigNumber) => {
-          const tokenId = id.toNumber()
-          const ticketData = await contract?.tickets(tokenId)
-          const eventData = await contract?.events(ticketData.eventId)
-          const owners = await contract?.getTicketOwners(tokenId)
-
-          // Find the current owner who has listed the ticket
-          const currentOwner = owners.find((owner: any) => owner.forSale)
-
-          return {
-            id: tokenId,
-            eventId: ticketData.eventId.toNumber(),
-            eventName: eventData.name,
-            price: ethers.utils.formatEther(currentOwner.price),
-            seller: currentOwner.owner,
-          }
-        }),
-      )
-
-      setListedTickets(ticketsData)
+      console.log(`Checking ownership of ticket ${ticketId} for account ${account}`);
+      
+      // Use direct ERC721 ownerOf call first (most accurate)
+      try {
+        const owner = await contract.methods.ownerOf(ticketId).call();
+        if (owner.toLowerCase() === account.toLowerCase()) {
+          console.log("User is confirmed owner via ERC721 ownerOf");
+          return true;
+        }
+      } catch (error) {
+        console.error("Error in ownerOf check:", error);
+      }
+      
+      // Fallback to checking the owners array
+      try {
+        const owners = await contract.methods.getTicketOwners(ticketId).call();
+        const isOwner = owners.some((ownerData: any) => 
+          ownerData.owner.toLowerCase() === account.toLowerCase()
+        );
+        
+        if (isOwner) {
+          console.log("User is confirmed owner via getTicketOwners");
+          return true;
+        }
+      } catch (error) {
+        console.error("Error checking ticket owners array:", error);
+      }
+      
+      return false;
     } catch (error) {
-      console.error("Error fetching listed tickets:", error)
+      console.error("Error in ownership check:", error);
+      return false;
+    }
+  };
+
+  // Add this function to handle numeric conversion safely
+  const safeFromWei = (weiValue: any): string => {
+    try {
+      // Make sure the input is a valid string first
+      const valueStr = String(weiValue || '0');
+      return web3?.utils.fromWei(valueStr, 'ether') || '0';
+    } catch (error) {
+      console.error('Error converting from Wei:', error);
+      return '0';
+    }
+  };
+
+  const fetchTicketDetails = async (ticketId: number) => {
+    if (!contract || !web3) return;
+    
+    try {
+      console.log(`Fetching details for ticket ID: ${ticketId}`);
+      
+      // Get ticket data
+      const ticketData = await contract.methods.tickets(ticketId).call();
+      console.log('Ticket data received:', ticketData);
+      
+      if (!ticketData || !ticketData.eventId) {
+        toast({
+          title: "Invalid Ticket",
+          description: "This ticket does not exist.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Get event data to check max resale price
+      const eventId = parseInt(ticketData.eventId);
+      console.log(`Getting event data for event ID: ${eventId}`);
+      
+      const eventData = await contract.methods.events(eventId).call();
+      console.log('Event data received:', eventData);
+      
+      // Use the safe conversion function
+      const maxResalePrice = safeFromWei(eventData.maxResalePrice);
+      const originalPrice = safeFromWei(ticketData.originalPrice);
+      
+      setSelectedTicketDetails({
+        maxResalePrice,
+        originalPrice,
+        eventId
+      });
+      
+      console.log("Ticket details loaded:", {
+        maxResalePrice,
+        originalPrice,
+        eventId
+      });
+    } catch (error) {
+      console.error("Error fetching ticket details:", error);
       toast({
         title: "Error",
-        description: "Failed to fetch listed tickets. Please try again.",
+        description: "Could not fetch ticket details.",
         variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
+      });
     }
-  }
+  };
+  
+  // Update when ticket ID changes
+  useEffect(() => {
+    if (selectedTicket) {
+      fetchTicketDetails(selectedTicket);
+    } else {
+      setSelectedTicketDetails({});
+    }
+  }, [selectedTicket, contract, web3]);
 
   const handleListTicket = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    if (!contract || !account || selectedTicket === null) {
+    if (!contract || !account || selectedTicket === null || !web3) {
       toast({
         title: "Error",
         description: "Please connect your wallet first",
         variant: "destructive",
-      })
-      return
+      });
+      return;
+    }
+
+    // Check max resale price
+    const maxResalePrice = selectedTicketDetails.maxResalePrice;
+    if (maxResalePrice) {
+      const priceValue = parseFloat(listPrice);
+      const maxValue = parseFloat(maxResalePrice);
+      
+      if (priceValue > maxValue) {
+        toast({
+          title: "Price Error",
+          description: `Price cannot exceed maximum resale price of ${maxResalePrice} ETH`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     try {
-      const priceInWei = ethers.utils.parseEther(listPrice)
-      const tx = await contract.listTicket(selectedTicket, priceInWei)
+      // Convert from string to wei with safety checks
+      let priceInWei;
+      try {
+        priceInWei = web3.utils.toWei(listPrice.toString(), "ether");
+      } catch (error) {
+        console.error("Error converting to Wei:", error);
+        toast({
+          title: "Invalid Price",
+          description: "Please enter a valid price",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`Attempting to list ticket #${selectedTicket} for ${priceInWei} wei`);
+      
+      // Get gas estimate first - use try/catch specifically for this operation
+      let gasEstimate;
+      try {
+        gasEstimate = await contract.methods
+          .listTicket(selectedTicket, priceInWei)
+          .estimateGas({ from: account });
+        
+        console.log(`Gas estimate: ${gasEstimate}`);
+      } catch (error) {
+        console.error("Gas estimation failed:", error);
+        let errorMessage = "Failed to estimate gas. The transaction might fail.";
+        
+        // Check for specific error messages
+        if (error.message && error.message.includes("max resale value")) {
+          errorMessage = "Price exceeds maximum resale value for this ticket.";
+        }
+        
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Send transaction using web3 syntax
+      console.log("Sending transaction with params:", { 
+        selectedTicket, 
+        priceInWei, 
+        from: account,
+        gas: Number(gasEstimate) + 100000
+      });
+      
+      const tx = await contract.methods
+        .listTicket(selectedTicket, priceInWei)
+        .send({
+          from: account,
+          gas: Number(gasEstimate) + 100000, // Add buffer to gas estimate
+        });
 
       toast({
         title: "Listing ticket",
         description: "Please wait while your transaction is being processed",
-      })
+      });
 
-      await tx.wait()
+      console.log("Transaction successful:", tx);
 
       toast({
         title: "Success",
         description: "Ticket listed successfully!",
-      })
+      });
 
-      setListDialogOpen(false)
-      fetchListedTickets()
-      setListPrice("")
+      setListDialogOpen(false);
+      refreshListedTickets();
+      setListPrice("");
     } catch (error) {
-      console.error("Error listing ticket:", error)
+      console.error("Error listing ticket:", error);
+      // Extract useful error message if possible
+      let errorMsg = "Failed to list ticket. Please try again.";
+      if (error.message) {
+        if (error.message.includes("max resale value")) {
+          errorMsg = "Price exceeds maximum resale value.";
+        } else if (error.message.includes("not owner")) {
+          errorMsg = "You do not own this ticket.";
+        } else if (error.message.includes("already listed")) {
+          errorMsg = "This ticket is already listed for sale.";
+        }
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to list ticket. Please try again.",
+        description: errorMsg,
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   const handleBuyTicket = async (tokenId: number, price: string) => {
-    if (!contract || !account) {
+    if (!contract || !account || !web3) {
       toast({
         title: "Error",
         description: "Please connect your wallet first",
@@ -133,23 +389,29 @@ export function MarketplaceSection() {
     }
 
     try {
-      const priceInWei = ethers.utils.parseEther(price)
-      // This is a placeholder - the actual contract would need a buyTicket function
-      // const tx = await contract.buyTicket(tokenId, { value: priceInWei })
+      // Convert from ethers to web3
+      const priceInWei = web3.utils.toWei(price, "ether")
+      
+      // Implementation for buyTicket with web3
+      const tx = await contract.methods.buyTicket(tokenId).send({
+        from: account,
+        value: priceInWei,
+        gas: 1000000 // Estimate gas for buying a ticket
+      })
 
       toast({
         title: "Buying ticket",
         description: "Please wait while your transaction is being processed",
       })
 
-      // await tx.wait()
+      console.log("Purchase transaction:", tx)
 
       toast({
         title: "Success",
         description: "Ticket purchased successfully!",
       })
 
-      fetchListedTickets()
+      refreshListedTickets()
     } catch (error) {
       console.error("Error buying ticket:", error)
       toast({
@@ -191,6 +453,143 @@ export function MarketplaceSection() {
       seller: "0x4321...8765",
     },
   ]
+
+   // Add this helper function to safely interact with contract data
+  const safeContractCall = async (method, fallbackValue = null) => {
+    try {
+      return await method();
+    } catch (error) {
+      console.error(`Contract call failed: ${error.message || 'Unknown error'}`);
+      return fallbackValue;
+    }
+  };
+
+  const refreshListedTickets = async () => {
+    try {
+      setLoading(true);
+      
+      if (!contract || !web3) {
+        console.log("Contract or web3 not initialized");
+        setLoading(false);
+        return;
+      }
+      
+      console.log("Fetching listed tickets...");
+      
+      // Safely get the listed ticket IDs
+      const listedTicketIds = await safeContractCall(
+        () => contract.methods.showListedTickets().call(),
+        []
+      );
+      
+      console.log("Listed ticket IDs:", listedTicketIds);
+      
+      if (!listedTicketIds || listedTicketIds.length === 0) {
+        console.log("No tickets are currently listed");
+        setListedTickets([]);
+        setLoading(false);
+        return;
+      }
+
+      // Process each ticket one by one to avoid batch errors
+      const processedTickets: ListedTicket[] = [];
+      
+      for (const id of listedTicketIds) {
+        try {
+          const tokenId = parseInt(id);
+          console.log(`Processing ticket ${tokenId}...`);
+          
+          // Get ticket data with error handling
+          const ticketData = await safeContractCall(
+            () => contract.methods.tickets(tokenId).call()
+          );
+          
+          if (!ticketData || !ticketData.eventId) {
+            console.warn(`Invalid ticket data for ID ${tokenId}`);
+            continue;
+          }
+          
+          // Get event data with error handling
+          const eventId = parseInt(ticketData.eventId);
+          const eventData = await safeContractCall(
+            () => contract.methods.events(eventId).call()
+          );
+          
+          if (!eventData || !eventData.name) {
+            console.warn(`Invalid event data for ID ${eventId}`);
+            continue;
+          }
+          
+          // Get owners with error handling
+          const owners = await safeContractCall(
+            () => contract.methods.getTicketOwners(tokenId).call(),
+            []
+          );
+          
+          // Find the current owner who has listed the ticket
+          const currentOwner = owners.find((owner: any) => owner.forSale);
+          
+          if (!currentOwner) {
+            console.warn(`No listed owner found for ticket ${tokenId}`);
+            continue;
+          }
+          
+          // Add to processed tickets
+          processedTickets.push({
+            id: tokenId,
+            eventId: eventId,
+            eventName: eventData.name,
+            price: safeFromWei(currentOwner.price),
+            seller: currentOwner.owner,
+          });
+          
+          console.log(`Successfully processed ticket ${tokenId}`);
+        } catch (error) {
+          console.error(`Failed to process ticket ${id}: ${error.message || 'Unknown error'}`);
+        }
+      }
+      
+      console.log(`Found ${processedTickets.length} valid tickets`);
+      setListedTickets(processedTickets);
+    } catch (error) {
+      console.error("Error fetching listed tickets:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch listed tickets. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update the useEffect to use the new function
+  useEffect(() => {
+    if (contract && web3) {
+      refreshListedTickets();
+      
+      // Set up event listener for new listings
+      if (contract.events) {
+        const ticketListedListener = contract.events.TicketListed({
+          fromBlock: 'latest'
+        }, (error: any, event: any) => {
+          if (error) {
+            console.error("Error listening to TicketListed:", error);
+          } else {
+            console.log("Ticket listed event detected:", event.returnValues);
+            refreshListedTickets();
+          }
+        });
+        
+        // Clean up listener on unmount
+        return () => {
+          if (ticketListedListener && ticketListedListener.unsubscribe) {
+            ticketListedListener.unsubscribe();
+          }
+        };
+      }
+    }
+  }, [contract, web3]);
 
   return (
     <section id="marketplace" className="py-24 bg-black relative overflow-hidden">
@@ -248,6 +647,16 @@ export function MarketplaceSection() {
                       required
                       className="bg-zinc-800 border-zinc-700"
                     />
+                    {selectedTicketDetails.maxResalePrice && (
+                      <p className="text-xs text-amber-400">
+                        Maximum resale price: {selectedTicketDetails.maxResalePrice} ETH
+                      </p>
+                    )}
+                    {selectedTicketDetails.originalPrice && (
+                      <p className="text-xs text-zinc-400">
+                        Original price: {selectedTicketDetails.originalPrice} ETH
+                      </p>
+                    )}
                   </div>
                   <Button
                     type="submit"
@@ -315,15 +724,14 @@ export function MarketplaceSection() {
                           {!isConnected
                             ? "Connect Wallet to Buy"
                             : ticket.seller.toLowerCase() === account?.toLowerCase()
-                              ? "You Own This Ticket"
-                              : "Buy Now"}
+                            ? "You Own This Ticket"
+                            : "Buy Now"}
                         </Button>
                       </CardFooter>
                     </Card>
                   </motion.div>
                 ))
-              : // Fallback to sample tickets if no tickets from contract
-                sampleTickets.map((ticket, index) => (
+              : sampleTickets.map((ticket, index) => (
                   <motion.div
                     key={ticket.id}
                     initial={{ opacity: 0, y: 20 }}

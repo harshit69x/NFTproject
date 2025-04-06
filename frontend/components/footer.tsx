@@ -1,4 +1,5 @@
 import { Github, Twitter, Instagram } from "lucide-react"
+import Link from 'next/link'
 
 export function Footer() {
   return (
@@ -45,9 +46,9 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="#" className="text-zinc-400 hover:text-white transition-colors">
+                <Link href="/my-tickets" className="text-zinc-400 hover:text-white transition-colors">
                   My Tickets
-                </a>
+                </Link>
               </li>
             </ul>
           </div>

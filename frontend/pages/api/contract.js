@@ -13,8 +13,8 @@ export default function handler(req, res) {
 
   const instance = new web3.eth.Contract(
     TicketNFT.abi,
-    "0x9cbF13f1b40b27eD6623948F60BA175b185C263C" // Replace with your deployed contract address
+    "0xb07f3DA916A27f1F1C209d908d2Cb07503DDD462" // Replace with your deployed contract address
   );
 
-  res.status(200).json({ abi: TicketNFT.abi, address: "0x9cbF13f1b40b27eD6623948F60BA175b185C263C" });
+  res.status(200).json({ abi: TicketNFT.abi, address: "0xb07f3DA916A27f1F1C209d908d2Cb07503DDD462" });
 }

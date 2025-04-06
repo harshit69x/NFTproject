@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Ticket, Tag, Calendar, MapPin } from "lucide-react"
-import { ethers } from "ethers"
+import Web3 from "web3"
 
 type OwnedTicket = {
   id: number
@@ -70,10 +70,10 @@ export default function MyTicketsPage() {
               id: i,
               eventId: ticketData.eventId.toNumber(),
               eventName: eventData.name,
-              originalPrice: ethers.utils.formatEther(ticketData.originalPrice),
+              originalPrice: Web3.utils.fromWei(ticketData.originalPrice, "ether"),
               forSale: currentOwnerData.forSale,
               listingPrice: currentOwnerData.forSale 
-                ? ethers.utils.formatEther(currentOwnerData.price) 
+                ? Web3.utils.fromWei(currentOwnerData.price, "ether") 
                 : undefined
             })
           }
@@ -130,15 +130,17 @@ export default function MyTicketsPage() {
     }
 
     try {
-      const priceInWei = ethers.utils.parseEther(listPrice)
-      const tx = await contract.listTicket(selectedTicket.id, priceInWei)
+      const priceInWei = Web3.utils.toWei(listPrice, "ether")
+      const tx = await contract.methods.listTicket(selectedTicket.id, priceInWei).send({
+        from: account
+      })
 
       toast({
         title: "Listing ticket",
         description: "Please wait while your transaction is being processed",
       })
 
-      await tx.wait()
+      await tx
 
       toast({
         title: "Success",
