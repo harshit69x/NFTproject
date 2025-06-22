@@ -1,4 +1,5 @@
 # 🎟️ NFT-Based Event Ticketing System
+https://www.linkedin.com/posts/harshit-mohanty-1100871a0_blockchain-nft-ethereum-activity-7314609976679809024-P5N8?utm_source=social_share_send&utm_medium=android_app&rcm=ACoAAC7_N9wBiZ39ogCmxZLZznO1IqS3diGWw44&utm_campaign=copy_link
 
 A decentralized ticketing platform where event organizers can mint event tickets as NFTs (ERC-721), and users can securely buy, sell, or transfer these tickets—with royalty rules and resale limits enforced via smart contracts.
 
