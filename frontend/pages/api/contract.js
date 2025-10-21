@@ -9,12 +9,12 @@ export default function handler(req, res) {
     fs.readFileSync(path.resolve("d:/NFTproject/frontend/contracts/TicketNFT.json"), "utf-8")
   );
 
-  const web3 = new Web3("http://127.0.0.1:8545"); // Replace with your Ganache RPC URL
+  const web3 = new Web3("https://sepolia.infura.io/v3/35605c388dd44b6fbc84f4d829ba1732"); // Sepolia Infura RPC URL
 
   const instance = new web3.eth.Contract(
     TicketNFT.abi,
-    "0xb07f3DA916A27f1F1C209d908d2Cb07503DDD462" // Replace with your deployed contract address
+    "0xa76D945e17BaD6668681aFbC8576b6Cd44009C65" // Deployed Sepolia contract address
   );
 
-  res.status(200).json({ abi: TicketNFT.abi, address: "0xb07f3DA916A27f1F1C209d908d2Cb07503DDD462" });
+  res.status(200).json({ abi: TicketNFT.abi, address: "0xa76D945e17BaD6668681aFbC8576b6Cd44009C65" });
 }

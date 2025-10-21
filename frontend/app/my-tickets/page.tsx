@@ -7,7 +7,7 @@ import { motion } from "framer-motion"
 import { useWeb3 } from "@/components/web3-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
@@ -79,68 +79,76 @@ export default function MyTicketsPage() {
         setLoading(false);
         return;
       }
-  
-      // Get all owned ticket IDs
-      const ownedTicketIds = await contractInst.methods.getOwnedTickets(account).call();
-      console.log(`🎫 Owned tickets for ${account}:`, ownedTicketIds);
+
+      console.log("Fetching owned tickets for account:", account);
+        
+      // Get all events
+      const allEvents = await contractInst.methods.showEvents().call();
+      console.log("All events:", allEvents);
       
-      if (!ownedTicketIds || !ownedTicketIds.length) {
+      if (!allEvents || allEvents.length === 0) {
         setOwnedTickets([]);
         setLoading(false);
         return;
       }
-  
-      // Fetch details for each ticket
-      const ticketsPromises = ownedTicketIds.map(async (tokenId: string) => {
-        try {
-          // Get event details for this ticket
-          const eventDetails = await contractInst.methods.getEventForTicket(tokenId).call();
-          console.log(`📦 Event for token ID ${tokenId}:`, eventDetails);
-          
-          // Fetch image from eventURI
-          let image = "";
-          try {
-            const response = await fetch(eventDetails.eventURI);
-            if (response.ok && response.headers.get("Content-Type")?.includes("application/json")) {
-              const data = await response.json();
-              if (data.image) {
-                image = data.image.trim().replace(/\n/g, "");
-              }
-            } else {
-              console.warn(`Invalid response or non-JSON content for eventURI: ${eventDetails.eventURI}`);
-            }
-          } catch (error) {
-            console.error(`Error fetching or parsing eventURI for event ${eventDetails.name}:`, error);
-          }
 
-          // Get ticket details (check if it's for sale and listing price)
-          const ticketOwners = await contractInst.methods.getTicketOwners(tokenId).call();
-          const currentOwnerData = ticketOwners.find(
-            (ownerData: any) => ownerData.owner.toLowerCase() === account.toLowerCase()
-          );
+      const ownedTickets = [];
+      
+      // Check token IDs 1-50 for ownership (reasonable limit)
+      for (let tokenId = 1; tokenId <= 50; tokenId++) {
+        try {
+          const owner = await contractInst.methods.ownerOf(tokenId).call();
           
-          return {
-            id: parseInt(tokenId),
-            eventId: parseInt(eventDetails.eventId),
-            eventName: eventDetails.name,
-            originalPrice: Web3.utils.fromWei(eventDetails.originalPrice, "ether"),
-            forSale: currentOwnerData?.forSale || false,
-            listingPrice: currentOwnerData?.forSale 
-              ? Web3.utils.fromWei(currentOwnerData.price, "ether") 
-              : undefined,
-            image, // Add the fetched image
-          };
-        } catch (error) {
-          console.error(`Error fetching details for ticket ${tokenId}:`, error);
-          return null;
+          if (owner && owner.toLowerCase() === account.toLowerCase()) {
+            const ticket = await contractInst.methods.tickets(tokenId).call();
+            
+            if (ticket && ticket.eventId && ticket.eventId !== '0') {
+              const eventDetails = allEvents.find((event: any) => event.eventId === ticket.eventId);
+              
+              if (eventDetails) {
+                const ticketOwners = await contractInst.methods.getTicketOwners(tokenId).call();
+                const currentOwnerData = ticketOwners.find(
+                  (ownerData: any) => ownerData.owner.toLowerCase() === account.toLowerCase()
+                );
+                
+                let image = "";
+                try {
+                  if (eventDetails.eventURI && eventDetails.eventURI.startsWith('http')) {
+                    const response = await fetch(eventDetails.eventURI);
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.image) {
+                        image = data.image.trim().replace(/\n/g, "");
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.warn(`Error fetching eventURI:`, error);
+                }
+                
+                ownedTickets.push({
+                  id: tokenId,
+                  eventId: parseInt(eventDetails.eventId),
+                  eventName: eventDetails.name,
+                  originalPrice: Web3.utils.fromWei(eventDetails.originalPrice, "ether"),
+                  forSale: currentOwnerData?.forSale || false,
+                  listingPrice: currentOwnerData?.forSale 
+                    ? Web3.utils.fromWei(currentOwnerData.price, "ether") 
+                    : undefined,
+                  image,
+                });
+              }
+            }
+          }
+        } catch (error: any) {
+          if (!error.message?.includes("ERC721: invalid token ID")) {
+            console.warn(`Error checking token ${tokenId}:`, error);
+          }
         }
-      });
+      }
       
-      const ticketsData = await Promise.all(ticketsPromises);
-      const validTickets = ticketsData.filter(ticket => ticket !== null) as OwnedTicket[];
-      
-      setOwnedTickets(validTickets);
-      console.log("Formatted owned tickets:", validTickets);
+      console.log(`🎫 Found ${ownedTickets.length} owned tickets:`, ownedTickets);
+      setOwnedTickets(ownedTickets);
     } catch (error) {
       console.error("Error fetching owned tickets:", error);
       toast({
@@ -172,8 +180,19 @@ export default function MyTicketsPage() {
       if (listed && listed.length > 0) {
         const ticketsPromises = listed.map(async (tokenId: string) => {
           try {
-            // Get event details for this ticket
-            const eventDetails = await contractInst.methods.getEventForTicket(tokenId).call();
+            // Read from the tickets mapping directly to get the eventId
+            const ticket = await contractInst.methods.tickets(tokenId).call();
+            const eventId = ticket.eventId.toString();
+            
+            // Read from the events mapping directly to get event details
+            const eventDetails = await contractInst.methods.events(eventId).call();
+            
+            if (!eventDetails || !eventDetails.active) {
+              console.error(`Event not found or inactive for ticket ${tokenId} with eventId ${eventId}`);
+              return null;
+            }
+            
+            console.log(`✅ Found event for ticket ${tokenId}:`, eventDetails.name);
             
             // Fetch image from eventURI
             let image = "";
@@ -252,7 +271,7 @@ export default function MyTicketsPage() {
           const owner = await contractInstance.methods.ownerOf(selectedTicket.id).call();
           console.log(`Ticket ${selectedTicket.id} owner:`, owner);
           console.log(`Current account:`, account);
-          console.log(`Is owner:`, owner.toLowerCase() === account.toLowerCase());
+          console.log(`Is owner:`, owner.toLowerCase() === account?.toLowerCase());
         } catch (err) {
           console.error("Error checking ownership:", err);
         }
@@ -298,17 +317,33 @@ export default function MyTicketsPage() {
       console.log("Listing price (wei):", priceInWei);
       console.log("Sender address:", account);
 
-      // List the ticket with proper parameters
-      const tx = await contractInstance.methods.listTicket(selectedTicket.id, priceInWei).send({
-        from: account,
-        gas: 3000000
-      });
+      // Check MetaMask availability
+      if (!window.ethereum) {
+        throw new Error("MetaMask not found");
+      }
 
-      console.log("📌 Ticket listed:", tx.events?.TicketListed?.returnValues);
+      // Estimate gas first
+      const gasEstimate = await contractInstance.methods.listTicket(selectedTicket.id, priceInWei)
+        .estimateGas({ from: account });
+      
+      const gasLimit = Math.floor(gasEstimate * 1.2); // Add 20% buffer
+
+      // List the ticket using MetaMask
+      const txHash = await window.ethereum.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: account,
+          to: contractInstance.options.address,
+          gas: Web3.utils.toHex(gasLimit),
+          data: contractInstance.methods.listTicket(selectedTicket.id, priceInWei).encodeABI()
+        }]
+      } as any);
+
+      console.log("📌 Ticket listing transaction hash:", txHash);
 
       toast({
-        title: "Success",
-        description: "Ticket listed successfully!",
+        title: "Success", 
+        description: `Ticket listed successfully! Transaction: ${txHash}`,
       });
 
       // Reset UI state
@@ -319,7 +354,7 @@ export default function MyTicketsPage() {
       // Refresh both ticket lists
       await fetchOwnedTickets();
       await fetchListedTickets();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error listing ticket:", error);
       
       // Provide more specific error messages
@@ -376,7 +411,7 @@ export default function MyTicketsPage() {
       });
       // Refresh tickets after cancelling
       fetchOwnedTickets();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error cancelling listing:", error);
       
       // Provide more specific error messages based on the error
@@ -416,24 +451,40 @@ export default function MyTicketsPage() {
       // Convert price to wei
       const priceInWei = Web3.utils.toWei(ticket.listingPrice, "ether");
       
-      // Call the buyTicket function on the contract
-      const tx = await contractInstance.methods.buyTicket(ticket.id).send({
-        from: account,
-        value: priceInWei,
-        gas: 3000000
-      });
+      // Check MetaMask availability
+      if (!window.ethereum) {
+        throw new Error("MetaMask not found");
+      }
+
+      // Estimate gas first
+      const gasEstimate = await contractInstance.methods.buyTicket(ticket.id)
+        .estimateGas({ from: account, value: priceInWei });
+      
+      const gasLimit = Math.floor(gasEstimate * 1.2); // Add 20% buffer
+      
+      // Call the buyTicket function using MetaMask
+      const txHash = await window.ethereum.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: account,
+          to: contractInstance.options.address,
+          value: Web3.utils.toHex(priceInWei),
+          gas: Web3.utils.toHex(gasLimit),
+          data: contractInstance.methods.buyTicket(ticket.id).encodeABI()
+        }]
+      } as any);
   
-      console.log("Buy ticket transaction:", tx);
+      console.log("Buy ticket transaction hash:", txHash);
   
       toast({
         title: "Success",
-        description: "Ticket purchased successfully!",
+        description: `Ticket purchased successfully! Transaction: ${txHash}`,
       });
       
       // Refresh tickets after purchase
       await fetchOwnedTickets();
       await fetchListedTickets();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error buying ticket:", error);
       
       let errorMessage = "Failed to buy ticket. Please try again.";
@@ -624,6 +675,9 @@ export default function MyTicketsPage() {
               <DialogContent className="sm:max-w-[425px] bg-zinc-900 border border-purple-500/20">
                 <DialogHeader>
                   <DialogTitle>List Ticket for Sale</DialogTitle>
+                  <DialogDescription>
+                    Set a price for your ticket to list it on the marketplace for other users to purchase.
+                  </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleListTicket} className="space-y-4 pt-4">
                   <div>

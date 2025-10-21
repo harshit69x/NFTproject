@@ -8,7 +8,7 @@ const TicketNFT = JSON.parse(
 );
 
 // Use WebSocket provider instead of HTTP for event subscriptions
-const web3 = new Web3(new Web3.providers.WebsocketProvider("ws://127.0.0.1:8545"));
+const web3 = new Web3(new Web3.providers.WebsocketProvider("wss://sepolia.infura.io/ws/v3/35605c388dd44b6fbc84f4d829ba1732"));
 const contractAddress = "0xb07f3DA916A27f1F1C209d908d2Cb07503DDD462";
 
 // Add connection handlers for WebSocket

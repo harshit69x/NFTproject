@@ -79,6 +79,26 @@ export function HeroSection() {
             >
               View Marketplace
             </Button>
+
+            <Link href="/diagnostics" passHref>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-orange-500/20 text-orange-400 hover:bg-orange-500/10"
+              >
+                🔧 Diagnostics
+              </Button>
+            </Link>
+
+            <Link href="/test-events" passHref>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-blue-500/20 text-blue-400 hover:bg-blue-500/10"
+              >
+                📖 Event URI Guide
+              </Button>
+            </Link>
           </div>
 
           {isConnected && (

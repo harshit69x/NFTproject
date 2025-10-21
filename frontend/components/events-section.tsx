@@ -76,23 +76,38 @@ export function EventsSection() {
       // Transform the data into the Event type
       const formattedEvents = await Promise.all(validEvents.map(async (event: any) => {
         let image = "/placeholder.svg?height=400&width=600";
-        try {
-          const response = await fetch(event.eventURI);
-          if (response.ok) {
-            try {
-              const data = await response.json();
-              if (data.image) {
-                // Sanitize the image URL by trimming and removing newline characters
-                image = data.image.trim().replace(/\n/g, "");
-              }
-            } catch (jsonError) {
-              console.error(`Error parsing JSON for event ${event.name}:`, jsonError);
-            }
-          } else {
-            console.warn(`Invalid response for eventURI: ${event.eventURI}`);
+        
+        // Check if eventURI is a valid URL
+        const isValidUrl = (string: string) => {
+          try {
+            new URL(string);
+            return true;
+          } catch (_) {
+            return false;
           }
-        } catch (error) {
-          console.error(`Error fetching eventURI for event ${event.name}:`, error);
+        };
+
+        if (isValidUrl(event.eventURI)) {
+          try {
+            const response = await fetch(event.eventURI);
+            if (response.ok) {
+              try {
+                const data = await response.json();
+                if (data.image) {
+                  // Sanitize the image URL by trimming and removing newline characters
+                  image = data.image.trim().replace(/\n/g, "");
+                }
+              } catch (jsonError) {
+                console.error(`Error parsing JSON for event ${event.name}:`, jsonError);
+              }
+            } else {
+              console.warn(`Invalid response for eventURI: ${event.eventURI}`);
+            }
+          } catch (error) {
+            console.error(`Error fetching eventURI for event ${event.name}:`, error);
+          }
+        } else {
+          console.warn(`Invalid URL format for eventURI: ${event.eventURI}. Using default image.`);
         }
 
         return {
@@ -138,8 +153,8 @@ export function EventsSection() {
       const { name, price, maxResalePrice, royaltyPercentage, eventURI } = formData;
 
       // Convert prices to Wei
-      const priceInWei = web3.utils.toWei(price, "ether");
-      const maxResalePriceInWei = web3.utils.toWei(maxResalePrice, "ether");
+      const priceInWei = Web3.utils.toWei(price, "ether");
+      const maxResalePriceInWei = Web3.utils.toWei(maxResalePrice, "ether");
 
       const tx = await contract.methods
         .createEvent(name, priceInWei, maxResalePriceInWei, royaltyPercentage, eventURI)
@@ -185,28 +200,56 @@ export function EventsSection() {
 
   const handleMintTicket = async (eventId: number, price: string) => {
     try {
+      if (!window.ethereum || !account) {
+        toast({
+          title: "Error",
+          description: "Please connect MetaMask wallet",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const instance = await getContractInstance();
       // Convert price to Wei
       const priceInWei = Web3.utils.toWei(price, "ether");
       
-      // Mint the ticket
-      const receipt = await instance.methods.mintTicket(eventId)
-        .send({
+      // Estimate gas
+      const gasEstimate = await instance.methods.mintTicket(eventId)
+        .estimateGas({
           from: account,
-          value: priceInWei, 
-          gas: 3000000
+          value: priceInWei
         });
+      
+      // Add 20% buffer to gas estimate
+      const gasLimit = Math.floor(gasEstimate * 1.2);
+      
+      // Mint the ticket using MetaMask
+      const txHash = await window.ethereum.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: account,
+          to: instance.options.address,
+          value: Web3.utils.toHex(priceInWei),
+          gas: Web3.utils.toHex(gasLimit),
+          data: instance.methods.mintTicket(eventId).encodeABI()
+        }]
+      } as any);
         
-      console.log("Mint transaction receipt:", receipt);
-      // Check for events in the receipt
-      if (receipt.events && receipt.events.TicketMinted) {
-        console.log("TicketMinted event found:", receipt.events.TicketMinted);
-      } else {
-        console.warn("No TicketMinted event found in receipt");
-      }
-      return receipt;
+      console.log("Mint transaction hash:", txHash);
+      
+      toast({
+        title: "Transaction Submitted",
+        description: `Transaction submitted! Hash: ${txHash}`,
+      });
+
+      return txHash;
     } catch (error) {
       console.error("Error minting ticket:", error);
+      toast({
+        title: "Error",
+        description: "Failed to mint ticket. Please try again.",
+        variant: "destructive",
+      });
       throw error;
     }
   };

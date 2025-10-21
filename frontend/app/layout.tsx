@@ -2,7 +2,7 @@ import type React from "react"
 import "./globals.css"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
-import { Web3Provider } from "@/components/web3-provider"
+import { Web3ProviderWrapper } from "@/components/web3-provider-wrapper"
 import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -20,18 +20,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="dark">
-          <Web3Provider>
+          <Web3ProviderWrapper>
             {children}
             <Toaster />
-          </Web3Provider>
+          </Web3ProviderWrapper>
         </ThemeProvider>
       </body>
     </html>
   )
 }
-
-
-
-import './globals.css'

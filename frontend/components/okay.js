@@ -11,8 +11,8 @@ async function getContractInstance() {
     const response = await fetch("/api/contract");
     const { abi, address } = await response.json();
 
-    // Use HTTP provider for read operations, but set up proper transaction handling
-    web3 = new Web3("http://127.0.0.1:8545"); // Ganache RPC URL
+    // Use Sepolia Infura RPC for read operations
+    web3 = new Web3("https://sepolia.infura.io/v3/35605c388dd44b6fbc84f4d829ba1732"); // Sepolia Infura RPC URL
     
     // Create contract instance
     instance = new web3.eth.Contract(abi, address);

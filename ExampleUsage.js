@@ -9,7 +9,7 @@ const TicketNFT = JSON.parse(
 
 
 
-const provider = new Web3.providers.HttpProvider("http://127.0.0.1:8545"); // Ganache RPC
+const provider = new Web3.providers.HttpProvider("https://sepolia.infura.io/v3/35605c388dd44b6fbc84f4d829ba1732"); // Sepolia Infura RPC
 const web3 = new Web3(provider);
 
 // Replace with deployed contract address from Ganache

@@ -9,10 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { CalendarPlus, Loader2 } from "lucide-react";
-import getContractInstance from "@/components/okay"; // Correct import
 
 export default function HostEventPage() {
-  const { account } = useWeb3();
+  const { account, web3, contract } = useWeb3();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -30,10 +29,50 @@ export default function HostEventPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const checkMetaMaskConnection = async () => {
+    if (!window.ethereum) {
+      toast({
+        title: "MetaMask Not Found",
+        description: "Please install MetaMask to use this dApp",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    try {
+      // Check if MetaMask is connected
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      if (accounts.length === 0) {
+        toast({
+          title: "MetaMask Not Connected", 
+          description: "Please connect your MetaMask wallet",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      // Check network
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' }) as unknown as string;
+      if (parseInt(chainId, 16) !== 11155111) {
+        toast({
+          title: "Wrong Network",
+          description: "Please switch to Sepolia testnet in MetaMask",
+          variant: "destructive", 
+        });
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("MetaMask connection check failed:", error);
+      return false;
+    }
+  };
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!account) {
+    if (!account || !web3 || !contract) {
       toast({
         title: "Error",
         description: "Please connect your wallet first",
@@ -42,33 +81,54 @@ export default function HostEventPage() {
       return;
     }
 
+    // Check MetaMask connection before proceeding
+    const isConnected = await checkMetaMaskConnection();
+    if (!isConnected) {
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-
-      // Get the contract instance dynamically
-      const instance = await getContractInstance();
-
-      // Convert prices to Wei
-      const priceInWei = Web3.utils.toWei(formData.price, "ether");
-      const maxResalePriceInWei = Web3.utils.toWei(formData.maxResalePrice, "ether");
 
       toast({
         title: "Creating event",
         description: "Please confirm the transaction in your wallet",
       });
 
-      // Call the createEvent method directly without gas estimation
-      const tx = await instance.methods
+      // Convert prices to Wei (the contract expects Wei values, not ETH)
+      const priceInWei = web3.utils.toWei(formData.price, "ether");
+      const maxResalePriceInWei = web3.utils.toWei(formData.maxResalePrice, "ether");
+      
+      console.log("Price in Wei:", priceInWei);
+      console.log("Max resale price in Wei:", maxResalePriceInWei);
+      
+      // Estimate gas before sending transaction
+      const gasEstimate = await contract.methods
         .createEvent(
           formData.name, 
-          priceInWei, 
-          maxResalePriceInWei, 
+          priceInWei,
+          maxResalePriceInWei,
+          parseInt(formData.royaltyPercentage), 
+          formData.eventURI || ""
+        )
+        .estimateGas({ from: account });
+      
+      console.log("Estimated gas:", gasEstimate);
+      
+      // Add 20% buffer to gas estimate
+      const gasLimit = Math.floor(Number(gasEstimate) * 1.2);
+      
+      const tx = await contract.methods
+        .createEvent(
+          formData.name, 
+          priceInWei, // Pass Wei values directly
+          maxResalePriceInWei, // Pass Wei values directly
           parseInt(formData.royaltyPercentage), 
           formData.eventURI || ""
         )
         .send({
           from: account,
-          gas: 3000000, // Use fixed gas limit like in your example
+          gas: gasLimit,
         });
 
       // Extract event data from transaction receipt
@@ -83,8 +143,8 @@ export default function HostEventPage() {
 
       // Show more detailed success message
       toast({
-        title: "Event Details",
-        description: `Price: ${Web3.utils.fromWei(eventData.price, "ether")} ETH`,
+        title: "Event Details", 
+        description: `Price: ${web3.utils.fromWei(eventData.price, "ether")} ETH`,
       });
 
       setIsSuccess(true);
@@ -97,13 +157,35 @@ export default function HostEventPage() {
         royaltyPercentage: "10",
         eventURI: "",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating event:", error);
-      toast({
-        title: "Error",
-        description: "Failed to create event. Please try again.",
-        variant: "destructive",
-      });
+      
+      // Handle specific MetaMask errors
+      if (error.message?.includes("circuit breaker")) {
+        toast({
+          title: "MetaMask Circuit Breaker",
+          description: "MetaMask blocked the request. Try resetting your MetaMask account in Settings → Advanced → Reset Account.",
+          variant: "destructive",
+        });
+      } else if (error.message?.includes("User denied")) {
+        toast({
+          title: "Transaction Cancelled",
+          description: "You cancelled the transaction.",
+          variant: "destructive",
+        });
+      } else if (error.message?.includes("insufficient funds")) {
+        toast({
+          title: "Insufficient Funds", 
+          description: "You don't have enough ETH to complete this transaction.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Transaction Failed",
+          description: `Error: ${error.message || "Unknown error occurred"}`,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }

@@ -49,55 +49,42 @@ export function PurchaseTicketDialog({ event, open, onOpenChange, onPurchase }: 
 
     try {
       // Call the parent component's onPurchase function to mint the ticket
-      const result = await onPurchase(event.id, event.originalPrice);
+      const txHash = await onPurchase(event.id, event.originalPrice);
       
-      console.log("Purchase result:", result);
+      console.log("Purchase transaction hash:", txHash);
       
-      // Safely extract ticket details from the transaction result
-      let tokenId, eventId;
-      
-      // Try to extract from different possible receipt formats
-      if (result?.events?.TicketMinted?.returnValues) {
-        // Standard web3.js format
-        tokenId = result.events.TicketMinted.returnValues.tokenId;
-        eventId = result.events.TicketMinted.returnValues.eventId;
-      } else if (result?.logs && Array.isArray(result.logs)) {
-        // Try to find the event in logs
-        console.log("Looking for event in logs:", result.logs);
-        // Logic to extract from logs if needed
-        tokenId = event.id; // Fallback
-        eventId = event.id; // Fallback
-      } else {
-        // If we can't find the event data, use fallbacks
-        console.warn("Could not find event data in receipt, using fallbacks");
-        tokenId = "N/A";
-        eventId = event.id.toString();
-      }
-      
+      // Since we now get a transaction hash instead of a receipt,
+      // we'll use fallback data for display
       setTicketDetails({
-        tokenId: tokenId?.toString() || "N/A",
-        eventId: eventId?.toString() || event.id.toString(),
+        tokenId: "Pending", // Will be available after confirmation
+        eventId: event.id.toString(),
         owner: account || "Unknown"
       });
       
-      console.log("🎟️ Ticket minted with details:", {
-        tokenId,
-        eventId,
+      console.log("🎟️ Ticket purchase submitted:", {
+        txHash,
+        eventId: event.id,
         owner: account
       });
       
       setIsProcessing(false);
       setIsComplete(true);
       setStep(3);
-    } catch (error) {
+    } catch (error: any) {
       setIsProcessing(false);
       console.error("Purchase error:", error);
       
-      setErrorMessage(
-        error.message?.includes("User denied") 
-          ? "Transaction was rejected in your wallet." 
-          : "Failed to purchase ticket. Please try again."
-      );
+      let errorMsg = "Failed to purchase ticket. Please try again.";
+      
+      if (error.message?.includes("User denied")) {
+        errorMsg = "Transaction was rejected in your wallet.";
+      } else if (error.message?.includes("insufficient funds")) {
+        errorMsg = "Insufficient funds for this transaction.";
+      } else if (error.message?.includes("circuit breaker")) {
+        errorMsg = "MetaMask circuit breaker is active. Please reset your account.";
+      }
+      
+      setErrorMessage(errorMsg);
     }
   }
 

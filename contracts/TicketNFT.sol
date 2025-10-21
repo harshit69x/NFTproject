@@ -46,7 +46,7 @@ contract TicketNFT is ERC721URIStorage, Ownable {
     event TicketListed(uint256 tokenId, address owner, uint256 price);
     event TicketSold(uint256 tokenId, address from, address to, uint256 price);
 
-    constructor() ERC721("Event Ticket", "TIKT") Ownable(msg.sender) {}
+    constructor() ERC721("Event Ticket", "TIKT") {}
 
     function createEvent(
         string memory name,
@@ -60,8 +60,8 @@ contract TicketNFT is ERC721URIStorage, Ownable {
         _eventIds++;
         events[_eventIds] = Event({
             name: name,
-            originalPrice: price * 10**18,
-            maxResalePrice: maxResalePrice * 10**18,
+            originalPrice: price, // Price is already in Wei
+            maxResalePrice: maxResalePrice, // Price is already in Wei
             royaltyPercentage: royaltyPercentage,
             active: true,
             organizer: msg.sender,
@@ -70,7 +70,7 @@ contract TicketNFT is ERC721URIStorage, Ownable {
         });
         eventList.push(_eventIds);
 
-        emit EventCreated(_eventIds, name, price * 10**18, eventURI);
+        emit EventCreated(_eventIds, name, price, eventURI);
         return _eventIds;
     }
 
@@ -184,5 +184,90 @@ contract TicketNFT is ERC721URIStorage, Ownable {
 
     function getTicketOwners(uint256 tokenId) public view returns (TicketOwner[] memory) {
         return tickets[tokenId].owners;
+    }
+
+    function getOwnedTickets(address owner) public view returns (uint256[] memory) {
+        uint256 totalSupply = _tokenIds.current();
+        uint256[] memory tempTickets = new uint256[](totalSupply);
+        uint256 count = 0;
+
+        // Iterate through all minted tickets
+        for (uint256 i = 1; i <= totalSupply; i++) {
+            if (_exists(i)) {
+                // Check if the owner owns this ticket
+                Ticket storage ticket = tickets[i];
+                for (uint256 j = 0; j < ticket.owners.length; j++) {
+                    if (ticket.owners[j].owner == owner) {
+                        tempTickets[count] = i;
+                        count++;
+                        break; // Found owner, move to next ticket
+                    }
+                }
+            }
+        }
+
+        // Create array with correct size
+        uint256[] memory ownedTickets = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            ownedTickets[i] = tempTickets[i];
+        }
+
+        return ownedTickets;
+    }
+
+    function getTicketDetails(uint256 tokenId) public view returns (
+        uint256 eventId,
+        uint256 originalPrice,
+        string memory eventName,
+        string memory eventURI,
+        address currentOwner,
+        uint256 currentPrice,
+        bool forSale
+    ) {
+        require(_exists(tokenId), "Ticket does not exist");
+        
+        Ticket storage ticket = tickets[tokenId];
+        Event storage eventDetails = events[ticket.eventId];
+        
+        // Find current owner (last owner in the array)
+        uint256 lastOwnerIndex = ticket.owners.length - 1;
+        TicketOwner storage currentOwnerInfo = ticket.owners[lastOwnerIndex];
+        
+        return (
+            ticket.eventId,
+            ticket.originalPrice,
+            eventDetails.name,
+            eventDetails.eventURI,
+            currentOwnerInfo.owner,
+            currentOwnerInfo.price,
+            currentOwnerInfo.forSale
+        );
+    }
+
+    function getEventForTicket(uint256 tokenId) public view returns (
+        uint256 eventId,
+        string memory eventName,
+        uint256 originalPrice,
+        uint256 maxResalePrice,
+        uint256 royaltyPercentage,
+        bool active,
+        address organizer,
+        string memory eventURI
+    ) {
+        require(_exists(tokenId), "Ticket does not exist");
+        
+        Ticket storage ticket = tickets[tokenId];
+        Event storage eventDetails = events[ticket.eventId];
+        
+        return (
+            eventDetails.eventId,
+            eventDetails.name,
+            eventDetails.originalPrice,
+            eventDetails.maxResalePrice,
+            eventDetails.royaltyPercentage,
+            eventDetails.active,
+            eventDetails.organizer,
+            eventDetails.eventURI
+        );
     }
 }

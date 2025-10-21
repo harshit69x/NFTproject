@@ -2,7 +2,6 @@
   "name": "NFTproject",
   "version": "1.0.0",
   "main": "truffle-config.js",
-  "type": "module",
   "directories": {
     "test": "test"
   },
@@ -14,6 +13,8 @@
   "description": "",
   "dependencies": {
     "@openzeppelin/contracts": "^4.9.3",
+    "@truffle/hdwallet-provider": "^2.1.15",
+    "dotenv": "^17.2.3",
     "ethers": "^6.13.5",
     "web3": "^1.8.2"
   }
