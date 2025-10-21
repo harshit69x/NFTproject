@@ -197,17 +197,26 @@ export default function MyTicketsPage() {
             // Fetch image from eventURI
             let image = "";
             try {
-              const response = await fetch(eventDetails.eventURI);
-              if (response.ok && response.headers.get("Content-Type")?.includes("application/json")) {
-                const data = await response.json();
-                if (data.image) {
-                  image = data.image.trim().replace(/\n/g, "");
+              // Check if eventURI is a valid URL
+              const isValidUrl = eventDetails.eventURI.startsWith('http://') || eventDetails.eventURI.startsWith('https://');
+              
+              if (isValidUrl) {
+                const response = await fetch(eventDetails.eventURI);
+                if (response.ok && response.headers.get("Content-Type")?.includes("application/json")) {
+                  const data = await response.json();
+                  if (data.image) {
+                    image = data.image.trim().replace(/\n/g, "");
+                  }
+                } else {
+                  console.warn(`Invalid response or non-JSON content for eventURI: ${eventDetails.eventURI}`);
                 }
               } else {
-                console.warn(`Invalid response or non-JSON content for eventURI: ${eventDetails.eventURI}`);
+                console.warn(`Invalid URL format for eventURI: ${eventDetails.eventURI}. Using default image.`);
+                image = "/placeholder.svg"; // Use placeholder image
               }
             } catch (error) {
               console.error(`Error fetching or parsing eventURI for event ${eventDetails.name}:`, error);
+              image = "/placeholder.svg"; // Use placeholder image on error
             }
 
             // Get the ticket listing details
