@@ -1,0 +1,9 @@
+# Exclude from Vercel deployment
+node_modules
+.env
+.env.local
+.next
+.DS_Store
+
+# Include contracts folder (remove if it was ignored)
+!contracts
